@@ -1,3 +1,4 @@
+
 name: Build ZAIN RUNNER APK
 
 on:
@@ -12,7 +13,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout Repository
@@ -37,16 +38,15 @@ jobs:
       - name: Extract Game ZIP
         run: |
           mkdir -p extracted
-
           count=0
+
           while IFS= read -r -d '' file; do
-            echo "Extracting: $file"
             unzip -oq "$file" -d extracted
             count=$((count + 1))
           done < <(find . -maxdepth 1 -type f -iname '*.zip' -print0)
 
           if [ "$count" -eq 0 ]; then
-            echo "No ZIP file found in repository root"
+            echo "No ZIP found"
             exit 1
           fi
 
@@ -57,26 +57,21 @@ jobs:
             -print -quit | xargs -r dirname)
 
           if [ -z "$PROJECT_DIR" ]; then
-            echo "package.json not found inside ZIP"
+            echo "package.json not found"
             exit 1
           fi
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Game found at: $PROJECT_DIR"
 
       - name: Install Dependencies
-        run: npm install
-        working-directory: extracted
-
-      - name: Install Project Dependencies
-        run: npm install
         working-directory: ${{ env.PROJECT_DIR }}
+        run: npm install --legacy-peer-deps
 
       - name: Install Capacitor
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          npm install @capacitor/core @capacitor/android
-          npm install --save-dev @capacitor/cli
+          npm install --legacy-peer-deps @capacitor/core @capacitor/android
+          npm install --legacy-peer-deps --save-dev @capacitor/cli
 
       - name: Build Game
         working-directory: ${{ env.PROJECT_DIR }}
@@ -97,7 +92,7 @@ jobs:
           EOF
           fi
 
-      - name: Setup Android Project
+      - name: Setup Android
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           if [ ! -d android ]; then
