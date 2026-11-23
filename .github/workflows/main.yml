@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - name: Checkout Game
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -34,28 +34,82 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
+      - name: Extract Game ZIP
+        run: |
+          mkdir -p extracted
+
+          count=0
+          while IFS= read -r -d '' file; do
+            echo "Extracting: $file"
+            unzip -oq "$file" -d extracted
+            count=$((count + 1))
+          done < <(find . -maxdepth 1 -type f -iname '*.zip' -print0)
+
+          if [ "$count" -eq 0 ]; then
+            echo "No ZIP file found in repository root"
+            exit 1
+          fi
+
+      - name: Find Game Project
+        run: |
+          PROJECT_DIR=$(find extracted -type f -name package.json \
+            -not -path '*/node_modules/*' \
+            -print -quit | xargs -r dirname)
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "package.json not found inside ZIP"
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Game found at: $PROJECT_DIR"
+
       - name: Install Dependencies
         run: npm install
+        working-directory: extracted
+
+      - name: Install Project Dependencies
+        run: npm install
+        working-directory: ${{ env.PROJECT_DIR }}
 
       - name: Install Capacitor
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           npm install @capacitor/core @capacitor/android
           npm install --save-dev @capacitor/cli
 
       - name: Build Game
+        working-directory: ${{ env.PROJECT_DIR }}
         run: npm run build
 
+      - name: Configure Capacitor
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          if [ ! -f capacitor.config.ts ] && \
+             [ ! -f capacitor.config.json ] && \
+             [ ! -f capacitor.config.js ]; then
+            cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.zain.runner",
+            "appName": "ZAIN RUNNER",
+            "webDir": "dist"
+          }
+          EOF
+          fi
+
       - name: Setup Android Project
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           if [ ! -d android ]; then
             npx cap add android
           fi
 
       - name: Sync Android
+        working-directory: ${{ env.PROJECT_DIR }}
         run: npx cap sync android
 
-      - name: Build Debug APK
-        working-directory: android
+      - name: Build APK
+        working-directory: ${{ env.PROJECT_DIR }}/android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
@@ -64,6 +118,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ZAIN-RUNNER-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
